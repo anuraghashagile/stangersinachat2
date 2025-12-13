@@ -55,7 +55,7 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
     }
   }, []);
 
-  // Sync Friends Status (Last Seen)
+  // Sync Friends Status (Last Seen) - OPTIMIZED: Update faster (10s) to catch refreshes
   useEffect(() => {
     if (onlineUsers.length > 0 && friends.length > 0) {
       setFriends(prev => {
@@ -68,8 +68,8 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
             
             if (isOnline) {
                // Update last seen to now if they are online
-               // Debounce update to prevent constant writes
-               if (!friend.lastSeen || (Date.now() - friend.lastSeen > 60000)) {
+               // Debounce update to prevent constant writes (Reduced to 10s)
+               if (!friend.lastSeen || (Date.now() - friend.lastSeen > 10000)) {
                   changed = true;
                   return { ...friend, lastSeen: Date.now() };
                }

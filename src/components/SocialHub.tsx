@@ -476,8 +476,14 @@ export const SocialHub = React.memo<SocialHubProps>(({
     !searchQuery || f.profile.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
   
-  const onlineFriends = filteredFriendsList.filter(f => resolveCurrentPeerId(f) !== null);
-  const offlineFriends = filteredFriendsList.filter(f => resolveCurrentPeerId(f) === null);
+  // Sorted Friends List (Combined Online/Offline for better UX)
+  const sortedFriends = [...filteredFriendsList].sort((a, b) => {
+     const aOnline = resolveCurrentPeerId(a) !== null;
+     const bOnline = resolveCurrentPeerId(b) !== null;
+     if (aOnline && !bOnline) return -1;
+     if (!aOnline && bOnline) return 1;
+     return (b.lastSeen || 0) - (a.lastSeen || 0);
+  });
   
   const filteredFriendRequests = friendRequests.filter(req => 
     !searchQuery || req.profile.username.toLowerCase().includes(searchQuery.toLowerCase())
@@ -698,57 +704,46 @@ export const SocialHub = React.memo<SocialHubProps>(({
                           </div>
                        )}
 
-                       {/* Section 2: Online Friends */}
-                       {onlineFriends.length > 0 && (
+                       {/* Section 2: All Friends (Sorted by Online Status) */}
+                       {sortedFriends.length > 0 && (
                           <div className="space-y-3">
-                            <div className="text-xs font-bold text-emerald-500 uppercase tracking-widest pl-1 flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                              Online ({onlineFriends.length})
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1 flex items-center justify-between">
+                               <span>My Friends ({sortedFriends.length})</span>
                             </div>
-                            {onlineFriends.map((friend) => {
+                            {sortedFriends.map((friend) => {
                                // Use the current ID for the click handler
                                const currentId = resolveCurrentPeerId(friend);
+                               const isOnline = currentId !== null;
                                const count = unreadCounts[friend.id] || (friend.profile.uid ? unreadCounts[friend.profile.uid] : 0);
+                               
+                               // If online, use current ID to chat. If offline, use friend ID to view history.
+                               const targetId = currentId || friend.id;
+
                                return (
-                               <div key={friend.id} onClick={() => currentId && openPrivateChat(currentId, friend.profile)} className="flex items-center justify-between p-3 bg-white dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 cursor-pointer hover:shadow-md transition-all duration-100 group hover:border-brand-200 dark:hover:border-white/10 active:scale-[0.99]">
+                               <div key={friend.id} onClick={() => openPrivateChat(targetId, friend.profile)} className="flex items-center justify-between p-3 bg-white dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 cursor-pointer hover:shadow-md transition-all duration-100 group hover:border-brand-200 dark:hover:border-white/10 active:scale-[0.99]">
                                  <div className="flex items-center gap-3">
                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-violet-500 flex items-center justify-center text-white font-bold shrink-0 relative">
                                      {friend.profile.username[0].toUpperCase()}
                                      {count > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border border-white dark:border-slate-900" />}
-                                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white dark:border-[#0A0A0F] rounded-full"></span>
+                                     {isOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white dark:border-[#0A0A0F] rounded-full animate-pulse"></span>}
                                    </div>
                                    <div className="min-w-0">
                                      <div className="text-sm font-bold text-slate-900 dark:text-white truncate">{friend.profile.username}</div>
-                                     <div className="text-xs text-emerald-500 font-medium">Active now</div>
+                                     <div className={clsx("text-xs flex items-center gap-1", isOnline ? "text-emerald-500 font-medium" : "text-slate-400")}>
+                                        {isOnline ? (
+                                            <>Active now</>
+                                        ) : (
+                                            <><Clock size={10}/> {formatLastSeen(friend.lastSeen)}</>
+                                        )}
+                                     </div>
                                    </div>
                                  </div>
-                                 <div className="p-2 text-slate-300 group-hover:text-brand-500 transition-colors"><MessageCircle size={18} /></div>
+                                 <div className={clsx("p-2 transition-colors", isOnline ? "text-brand-500" : "text-slate-300 dark:text-slate-600")}>
+                                    <MessageCircle size={18} />
+                                 </div>
                                </div>
                                );
                              })}
-                          </div>
-                       )}
-
-                       {/* Section 3: Offline Friends */}
-                       {offlineFriends.length > 0 && (
-                          <div className="space-y-3">
-                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Offline</div>
-                            {offlineFriends.map((friend) => {
-                               const count = unreadCounts[friend.id] || (friend.profile.uid ? unreadCounts[friend.profile.uid] : 0);
-                               return (
-                               <div key={friend.id} onClick={() => openPrivateChat(friend.id, friend.profile)} className="flex items-center justify-between p-3 bg-white dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 cursor-pointer hover:shadow-md transition-all duration-100 group grayscale-[0.5] hover:grayscale-0 active:scale-[0.99]">
-                                 <div className="flex items-center gap-3">
-                                   <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-300 font-bold shrink-0 relative">
-                                     {friend.profile.username[0].toUpperCase()}
-                                     {count > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border border-white dark:border-slate-900" />}
-                                   </div>
-                                   <div className="min-w-0">
-                                     <div className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate">{friend.profile.username}</div>
-                                     <div className="text-xs text-slate-400 flex items-center gap-1"><Clock size={10}/> {formatLastSeen(friend.lastSeen)}</div>
-                                   </div>
-                                 </div>
-                               </div>
-                             )})}
                           </div>
                        )}
 
