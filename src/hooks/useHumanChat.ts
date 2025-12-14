@@ -96,6 +96,29 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
     }
   }, [notification]);
 
+  // --- HELPER: Save Recent Peer ---
+  const addToRecentPeers = (profile: UserProfile, peerId: string) => {
+    try {
+       const existing = localStorage.getItem('recent_peers');
+       let recents: RecentPeer[] = existing ? JSON.parse(existing) : [];
+       
+       // Deduplicate by UID (preferred) or PeerID
+       recents = recents.filter(r => {
+         if (r.profile.uid && profile.uid) return r.profile.uid !== profile.uid;
+         return r.peerId !== peerId;
+       });
+       
+       recents.unshift({
+         id: profile.uid || peerId,
+         peerId: peerId,
+         profile: profile,
+         metAt: Date.now()
+       });
+       
+       localStorage.setItem('recent_peers', JSON.stringify(recents.slice(0, 50)));
+    } catch(e) { console.error("Failed to save recent peer", e); }
+  };
+
   // --- 1. INITIALIZE PEER ---
   useEffect(() => {
     if (!userProfile) return;
@@ -199,54 +222,74 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
     };
   }, [userProfile, myPeerId]);
 
-  // --- MATCHMAKING (FIFO Queue) ---
+  // --- MATCHMAKING (Polling Strategy for High Load) ---
   useEffect(() => {
     if (status !== ChatMode.SEARCHING) return;
-    if (!myPeerId || isMatchmakerRef.current || mainConnRef.current) return;
+    
+    // Polling function to retry matchmaking frequently
+    const attemptMatch = () => {
+        if (!myPeerId || isMatchmakerRef.current || mainConnRef.current || statusRef.current !== ChatMode.SEARCHING) return;
 
-    const waiters = onlineUsers
-      .filter(u => 
-        u.status === 'waiting' && 
-        u.peerId !== myPeerId && 
-        !failedPeersRef.current.has(u.peerId)
-      )
-      .sort((a, b) => a.timestamp - b.timestamp);
+        // Filter valid waiters
+        const waiters = onlineUsers.filter(u => 
+            u.status === 'waiting' && 
+            u.peerId !== myPeerId && 
+            !failedPeersRef.current.has(u.peerId)
+        );
 
-    if (waiters.length > 0) {
-      const target = waiters[0];
-      isMatchmakerRef.current = true;
-      
-      setTimeout(() => {
-         if (statusRef.current !== ChatMode.SEARCHING || mainConnRef.current) {
-             isMatchmakerRef.current = false;
-             return;
-         }
+        if (waiters.length > 0) {
+            // OPTIMIZATION: Pick a RANDOM waiter instead of the oldest.
+            // This prevents race conditions where 100 people all try to connect to the same "oldest" waiter.
+            const target = waiters[Math.floor(Math.random() * waiters.length)];
+            
+            isMatchmakerRef.current = true;
+            
+            // Short random delay to further reduce collision probability in high concurrency
+            setTimeout(() => {
+                if (statusRef.current !== ChatMode.SEARCHING || mainConnRef.current) {
+                    isMatchmakerRef.current = false;
+                    return;
+                }
 
-         try {
-            const conn = peerRef.current?.connect(target.peerId, { 
-              reliable: true, 
-              metadata: { type: 'random' } 
-            });
+                try {
+                    console.log("Attempting to connect to:", target.peerId);
+                    const conn = peerRef.current?.connect(target.peerId, { 
+                        reliable: true, 
+                        metadata: { type: 'random' } 
+                    });
 
-            if (conn) {
-               setupConnection(conn, { type: 'random' });
-               if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
-               connectionTimeoutRef.current = setTimeout(() => {
-                  if (statusRef.current === ChatMode.SEARCHING && !mainConnRef.current?.open) {
-                     conn.close();
-                     mainConnRef.current = null;
-                     failedPeersRef.current.add(target.peerId);
-                     isMatchmakerRef.current = false;
-                  }
-               }, 5000);
-            } else {
-               isMatchmakerRef.current = false;
-            }
-         } catch (e) {
-            isMatchmakerRef.current = false;
-         }
-      }, Math.random() * 500 + 100);
-    }
+                    if (conn) {
+                        setupConnection(conn, { type: 'random' });
+                        
+                        if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+                        // Timeout if connection doesn't open within 5s
+                        connectionTimeoutRef.current = setTimeout(() => {
+                            if (statusRef.current === ChatMode.SEARCHING && !mainConnRef.current?.open) {
+                                console.log("Connection timeout, retrying...");
+                                conn.close();
+                                mainConnRef.current = null;
+                                failedPeersRef.current.add(target.peerId); // Temporarily ignore this peer
+                                isMatchmakerRef.current = false;
+                            }
+                        }, 5000);
+                    } else {
+                        isMatchmakerRef.current = false;
+                    }
+                } catch (e) {
+                    console.error("Connect error:", e);
+                    isMatchmakerRef.current = false;
+                }
+            }, Math.random() * 200 + 50); // Faster reaction time (50-250ms)
+        }
+    };
+
+    // Run immediately
+    attemptMatch();
+
+    // Poll every 1 second to ensure fast connections if initial presence sync was missed/delayed
+    const interval = setInterval(attemptMatch, 1000);
+
+    return () => clearInterval(interval);
   }, [status, onlineUsers, myPeerId]);
 
   // --- CONNECTION SETUP ---
@@ -325,32 +368,12 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
                }
             ]);
 
-            // Save to Recent Peers
-            try {
-               const existing = localStorage.getItem('recent_peers');
-               let recents: RecentPeer[] = existing ? JSON.parse(existing) : [];
-               
-               // Deduplicate by UID (preferred) or PeerID
-               recents = recents.filter(r => {
-                 if (r.profile.uid && profile.uid) return r.profile.uid !== profile.uid;
-                 return r.peerId !== conn.peer;
-               });
-               
-               recents.unshift({
-                 id: profile.uid || conn.peer,
-                 peerId: conn.peer,
-                 profile: profile,
-                 metAt: Date.now()
-               });
-               
-               localStorage.setItem('recent_peers', JSON.stringify(recents.slice(0, 50)));
-            } catch(e) { console.error(e); }
+            // Save to Recent Peers immediately
+            addToRecentPeers(profile, conn.peer);
+
          } else {
             // Direct Connection: Store profile map
             directPeerProfilesRef.current.set(conn.peer, profile);
-            
-            // If this was a reconnection for a friend, we might want to trigger a state update?
-            // But usually messages drive the state.
          }
       }
       
