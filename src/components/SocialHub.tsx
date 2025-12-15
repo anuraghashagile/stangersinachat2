@@ -856,7 +856,7 @@ export const SocialHub = React.memo<SocialHubProps>(({
                          </div>
                       )}
                       
-                      {/* MESSAGES CONTAINER - Newest at Top (No reverse mapping since globalMessages is already Newest-First) */}
+                      {/* MESSAGES CONTAINER - Newest at Top */}
                       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 flex flex-col">
                          {globalMessages.map(msg => (
                            <div key={msg.id} className={clsx("flex flex-col", msg.sender === 'me' ? "items-end" : "items-start")}>
@@ -866,7 +866,15 @@ export const SocialHub = React.memo<SocialHubProps>(({
                               </div>
                            </div>
                          ))}
-                         {/* Removed messagesEndRef to prevent auto-scrolling to bottom, as new messages are at the top */}
+                         {globalMessages.length === 0 && (
+                            <div className="flex-1 flex flex-col items-center justify-center opacity-60">
+                               <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4 text-slate-300 dark:text-slate-500 animate-pulse">
+                                  <Globe size={32} />
+                               </div>
+                               <p className="text-slate-500 dark:text-slate-400 font-medium">Global Chat</p>
+                               <p className="text-xs text-slate-400 max-w-[200px] text-center mt-1">Talk to everyone currently online.</p>
+                            </div>
+                         )}
                       </div>
                       <form onSubmit={handleGlobalSubmit} className="p-4 shrink-0 border-t border-slate-100 dark:border-white/5 bg-white/50 dark:bg-black/20 backdrop-blur-md flex gap-2">
                          <input 
