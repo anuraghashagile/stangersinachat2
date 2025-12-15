@@ -25,14 +25,14 @@ export const useGlobalChat = (userProfile: UserProfile | null, myPeerId: string 
      } catch(e) {}
   }, [globalMessages]);
 
-  // 1. Initial History Load (Newest First)
+  // 1. Initial History Load
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       const data = await getGlobalMessages();
       if (!mounted) return;
       
-      // DB returns Newest First (DESC). We keep it that way for Feed Style.
+      // DB returns Newest First (DESC).
       const formatted: Message[] = data.map((row: any) => ({
         id: row.id.toString(),
         text: row.content,
@@ -48,17 +48,12 @@ export const useGlobalChat = (userProfile: UserProfile | null, myPeerId: string 
          // Deduplicate
          const existingIds = new Set(prev.map(m => m.id));
          const newMsgs = formatted.filter(m => !existingIds.has(m.id));
-         if (newMsgs.length === 0) return prev;
          
-         // Combine: New DB messages + Existing Local messages
-         // Since DB is newest first, we put them at the front, but we need to merge carefully.
-         // Simpler strategy for initial load: Just take DB messages if local is stale, or merge.
-         // For feed style (Newest Top): [Newest ... Oldest]
+         // Combine and Sort Chronologically (Oldest -> Newest)
+         const combined = [...prev, ...newMsgs].sort((a,b) => a.timestamp - b.timestamp);
          
-         const combined = [...newMsgs, ...prev].sort((a,b) => b.timestamp - a.timestamp);
-         
-         // Limit to 50 messages (Auto-vanish older ones)
-         return combined.slice(0, 50);
+         // Limit to 50 messages
+         return combined.slice(-50);
       });
       setIsReady(true);
     };
@@ -79,8 +74,8 @@ export const useGlobalChat = (userProfile: UserProfile | null, myPeerId: string 
 
          setGlobalMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
-            // Newest at Top + Limit 50
-            return [{ ...msg, sender: 'stranger' } as Message, ...prev].slice(0, 50);
+            // Append to end (Standard Chat) + Limit 50
+            return [...prev, { ...msg, sender: 'stranger' } as Message].slice(-50);
          });
       })
       .subscribe((status) => {
@@ -109,8 +104,8 @@ export const useGlobalChat = (userProfile: UserProfile | null, myPeerId: string 
       type: 'text'
     };
 
-    // A. Optimistic Local Update (Newest at Top + Limit 50)
-    setGlobalMessages(prev => [newMessage, ...prev].slice(0, 50));
+    // A. Optimistic Local Update (Append to end)
+    setGlobalMessages(prev => [...prev, newMessage].slice(-50));
 
     // B. Instant Broadcast to others
     if (channelRef.current) {

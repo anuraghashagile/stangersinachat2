@@ -98,6 +98,7 @@ export const SocialHub = React.memo<SocialHubProps>(({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const privateMessagesEndRef = useRef<HTMLDivElement>(null);
+  const globalMessagesEndRef = useRef<HTMLDivElement>(null);
   const privateFileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -293,18 +294,23 @@ export const SocialHub = React.memo<SocialHubProps>(({
     }
   }, [incomingDirectStatus]);
 
-  // REMOVED AUTO-SCROLL FOR GLOBAL CHAT because it is now a Feed (Newest at Top)
+  // Auto-scroll for Private Chat
   useEffect(() => {
-    // Only scroll for private messages now
     if (activePeer && isOpen) privateMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [localChatHistory, activePeer, isOpen, peerTypingStatus, peerRecordingStatus]);
+
+  // Auto-scroll for Global Chat
+  useEffect(() => {
+    if (activeTab === 'global' && isOpen) {
+      globalMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [globalMessages, activeTab, isOpen]);
 
   const handleGlobalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (globalInput.trim()) {
       sendGlobalMessage(globalInput);
       setGlobalInput('');
-      // No scroll to bottom, as new message appears at top
     }
   };
 
@@ -856,16 +862,8 @@ export const SocialHub = React.memo<SocialHubProps>(({
                          </div>
                       )}
                       
-                      {/* MESSAGES CONTAINER - Newest at Top */}
+                      {/* MESSAGES CONTAINER - Oldest at Top (Standard Chat) */}
                       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 flex flex-col">
-                         {globalMessages.map(msg => (
-                           <div key={msg.id} className={clsx("flex flex-col", msg.sender === 'me' ? "items-end" : "items-start")}>
-                              <div className={clsx("px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words shadow-sm", msg.sender === 'me' ? "bg-brand-500 text-white rounded-tr-sm" : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-tl-sm")}>
-                                 <button onClick={() => { if (msg.sender !== 'me' && msg.senderPeerId && msg.senderProfile) setViewingProfile({ id: msg.senderPeerId, profile: msg.senderProfile }); }} className={clsx("text-[10px] block font-bold mb-0.5", msg.sender === 'me' ? "text-brand-100 cursor-default" : "text-brand-500 hover:underline cursor-pointer")}>{msg.sender === 'me' ? 'You' : msg.senderName}</button>
-                                 {msg.text}
-                              </div>
-                           </div>
-                         ))}
                          {globalMessages.length === 0 && (
                             <div className="flex-1 flex flex-col items-center justify-center opacity-60">
                                <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4 text-slate-300 dark:text-slate-500 animate-pulse">
@@ -875,6 +873,15 @@ export const SocialHub = React.memo<SocialHubProps>(({
                                <p className="text-xs text-slate-400 max-w-[200px] text-center mt-1">Talk to everyone currently online.</p>
                             </div>
                          )}
+                         {globalMessages.map(msg => (
+                           <div key={msg.id} className={clsx("flex flex-col", msg.sender === 'me' ? "items-end" : "items-start")}>
+                              <div className={clsx("px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words shadow-sm", msg.sender === 'me' ? "bg-brand-500 text-white rounded-tr-sm" : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-tl-sm")}>
+                                 <button onClick={() => { if (msg.sender !== 'me' && msg.senderPeerId && msg.senderProfile) setViewingProfile({ id: msg.senderPeerId, profile: msg.senderProfile }); }} className={clsx("text-[10px] block font-bold mb-0.5", msg.sender === 'me' ? "text-brand-100 cursor-default" : "text-brand-500 hover:underline cursor-pointer")}>{msg.sender === 'me' ? 'You' : msg.senderName}</button>
+                                 {msg.text}
+                              </div>
+                           </div>
+                         ))}
+                         <div ref={globalMessagesEndRef} />
                       </div>
                       <form onSubmit={handleGlobalSubmit} className="p-4 shrink-0 border-t border-slate-100 dark:border-white/5 bg-white/50 dark:bg-black/20 backdrop-blur-md flex gap-2">
                          <input 
