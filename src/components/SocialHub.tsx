@@ -293,11 +293,9 @@ export const SocialHub = React.memo<SocialHubProps>(({
     }
   }, [incomingDirectStatus]);
 
+  // REMOVED AUTO-SCROLL FOR GLOBAL CHAT because it is now a Feed (Newest at Top)
   useEffect(() => {
-    if (activeTab === 'global' && isOpen && !activePeer) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [globalMessages, activeTab, isOpen, activePeer]);
-
-  useEffect(() => {
+    // Only scroll for private messages now
     if (activePeer && isOpen) privateMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [localChatHistory, activePeer, isOpen, peerTypingStatus, peerRecordingStatus]);
 
@@ -306,6 +304,7 @@ export const SocialHub = React.memo<SocialHubProps>(({
     if (globalInput.trim()) {
       sendGlobalMessage(globalInput);
       setGlobalInput('');
+      // No scroll to bottom, as new message appears at top
     }
   };
 
@@ -857,7 +856,8 @@ export const SocialHub = React.memo<SocialHubProps>(({
                          </div>
                       )}
                       
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                      {/* MESSAGES CONTAINER - Newest at Top (No reverse mapping since globalMessages is already Newest-First) */}
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 flex flex-col">
                          {globalMessages.map(msg => (
                            <div key={msg.id} className={clsx("flex flex-col", msg.sender === 'me' ? "items-end" : "items-start")}>
                               <div className={clsx("px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words shadow-sm", msg.sender === 'me' ? "bg-brand-500 text-white rounded-tr-sm" : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-tl-sm")}>
@@ -866,7 +866,7 @@ export const SocialHub = React.memo<SocialHubProps>(({
                               </div>
                            </div>
                          ))}
-                         <div ref={messagesEndRef} />
+                         {/* Removed messagesEndRef to prevent auto-scrolling to bottom, as new messages are at the top */}
                       </div>
                       <form onSubmit={handleGlobalSubmit} className="p-4 shrink-0 border-t border-slate-100 dark:border-white/5 bg-white/50 dark:bg-black/20 backdrop-blur-md flex gap-2">
                          <input 

@@ -382,6 +382,18 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
          }
       }
       
+      else if (payload.type === 'profile_update') {
+          const updatedProfile = payload.payload as UserProfile;
+          if (isMain) {
+              setPartnerProfile(updatedProfile);
+              setNotification(`Stranger updated their profile to ${updatedProfile.username}`);
+          } else {
+              directPeerProfilesRef.current.set(conn.peer, updatedProfile);
+              // Notification for direct peers
+              setNotification(`${updatedProfile.username} updated their profile`);
+          }
+      }
+
       else if (payload.type === 'typing') {
          if (isMain) setPartnerTyping(payload.payload);
          else setIncomingDirectStatus({ peerId: conn.peer, type: 'typing', value: payload.payload });
@@ -573,7 +585,15 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
   };
 
   const updateMyProfile = (newProfile: UserProfile) => {
+     // 1. Update Supabase Presence
      channelRef.current?.track({ peerId: myPeerId, status: status === ChatMode.SEARCHING ? 'waiting' : 'idle', timestamp: Date.now(), profile: newProfile });
+     
+     // 2. Broadcast to active connection
+     if (mainConnRef.current?.open) {
+         mainConnRef.current.send({ type: 'profile_update', payload: newProfile });
+     }
+     
+     // 3. (Optional) Broadcast to direct connections could go here if needed
   };
 
   const sendVanishMode = (enabled: boolean) => {

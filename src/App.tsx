@@ -689,7 +689,7 @@ export default function App() {
         {friendNotification && (
             <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[150] animate-in slide-in-from-top-2 fade-in duration-300 pointer-events-none w-full max-w-sm px-4 flex justify-center">
               <div className="bg-emerald-500/90 text-white backdrop-blur-md px-4 py-2 rounded-full shadow-xl border border-white/10 text-sm font-medium flex items-center gap-2 truncate max-w-full">
-                 <Sparkles size={16} className="text-yellow-300 shrink-0" /> <span className="truncate">{friendNotification}</span>
+                 <span className="truncate">{friendNotification}</span>
               </div>
            </div>
         )}
