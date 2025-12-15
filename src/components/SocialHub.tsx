@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, History, Globe, MessageCircle, X, Wifi, Heart, ArrowLeft, Send, UserPlus, Check, Trash2, Image as ImageIcon, Mic, Square, MapPin, Smile, Clock, Search, Info, UserCheck } from 'lucide-react';
+import { Users, History, Globe, MessageCircle, X, Wifi, Heart, ArrowLeft, Send, UserPlus, Check, Trash2, Image as ImageIcon, Mic, Square, MapPin, Smile, Clock, Search, Info, UserCheck, Infinity } from 'lucide-react';
 import { UserProfile, PresenceState, RecentPeer, Message, ChatMode, SessionType, Friend, FriendRequest, DirectMessageEvent, DirectStatusEvent, ReplyInfo } from '../types';
 import { clsx } from 'clsx';
 import { MessageBubble } from './MessageBubble';
 import { Button } from './Button';
+import { ImageViewer } from './ImageViewer';
 
 interface SocialHubProps {
   onlineUsers: PresenceState[];
@@ -16,7 +17,7 @@ interface SocialHubProps {
   privateMessages: Message[]; 
   sendPrivateMessage: (text: string) => void; 
   sendDirectMessage?: (peerId: string, text: string, id?: string, replyTo?: ReplyInfo) => void; 
-  sendDirectImage?: (peerId: string, base64: string, id?: string) => void;
+  sendDirectImage?: (peerId: string, base64: string, id?: string, expiryDuration?: number) => void;
   sendDirectAudio?: (peerId: string, base64: string, id?: string) => void;
   sendDirectTyping?: (peerId: string, isTyping: boolean) => void;
   sendDirectFriendRequest?: (peerId: string) => void; 
@@ -38,6 +39,13 @@ interface SocialHubProps {
   rejectFriendRequest?: (peerId: string) => void;
   isPeerConnected?: (peerId: string) => boolean;
 }
+
+const TIMER_OPTIONS = [
+  { label: '∞', value: 0, icon: Infinity },
+  { label: '5s', value: 5000 },
+  { label: '30s', value: 30000 },
+  { label: '1m', value: 60000 },
+];
 
 export const SocialHub = React.memo<SocialHubProps>(({ 
   onlineUsers, 
@@ -91,6 +99,8 @@ export const SocialHub = React.memo<SocialHubProps>(({
   const [viewingProfile, setViewingProfile] = useState<{id: string, profile: UserProfile} | null>(null);
   const [confirmRemoveFriend, setConfirmRemoveFriend] = useState<string | null>(null);
   const [triggerTarget, setTriggerTarget] = useState<HTMLElement | null>(null);
+  const [imageTimerIndex, setImageTimerIndex] = useState(0);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const privateMessagesEndRef = useRef<HTMLDivElement>(null);
@@ -99,6 +109,9 @@ export const SocialHub = React.memo<SocialHubProps>(({
   const audioChunksRef = useRef<Blob[]>([]);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const globalToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const currentTimerOption = TIMER_OPTIONS[imageTimerIndex];
+  const TimerIcon = currentTimerOption.icon;
 
   // Helper to generate a stable storage key (using UID if available, else PeerID)
   const getStorageKey = (peerId: string, profile?: UserProfile) => {
@@ -339,13 +352,21 @@ export const SocialHub = React.memo<SocialHubProps>(({
       reader.onloadend = () => {
         const base64 = reader.result as string;
         const newMsgId = Date.now().toString() + Math.random().toString(36).substring(2);
-        const newMsg: Message = { id: newMsgId, fileData: base64, type: 'image', sender: 'me', timestamp: Date.now(), reactions: [], status: 'sent' };
+        
+        const expiry = TIMER_OPTIONS[imageTimerIndex].value;
+        const expiresAt = expiry > 0 ? Date.now() + expiry : undefined;
+        
+        const newMsg: Message = { id: newMsgId, fileData: base64, type: 'image', sender: 'me', timestamp: Date.now(), reactions: [], status: 'sent', expiryDuration: expiry, expiresAt };
         addMessageToLocal(newMsg, activePeer.id);
-        sendDirectImage(activePeer.id, base64, newMsgId);
+        sendDirectImage(activePeer.id, base64, newMsgId, expiry > 0 ? expiry : undefined);
       };
       reader.readAsDataURL(file);
     }
     if (privateFileInputRef.current) privateFileInputRef.current.value = '';
+  };
+  
+  const toggleImageTimer = () => {
+    setImageTimerIndex((prev) => (prev + 1) % TIMER_OPTIONS.length);
   };
 
   const startPrivateRecording = async () => {
@@ -850,7 +871,7 @@ export const SocialHub = React.memo<SocialHubProps>(({
 
                   <div className="flex-1 space-y-3 mb-4 overflow-y-auto min-h-0 pr-1 pt-4">
                      {localChatHistory.map(msg => (
-                       <MessageBubble key={msg.id} message={msg} senderName={activePeer.profile.username} onReact={(emoji) => handleReactionSend(msg.id, emoji)} onEdit={onEditMessage} onReply={handleReply} />
+                       <MessageBubble key={msg.id} message={msg} senderName={activePeer.profile.username} onReact={(emoji) => handleReactionSend(msg.id, emoji)} onEdit={onEditMessage} onReply={handleReply} onImageClick={setPreviewImage} />
                      ))}
                      {localChatHistory.length === 0 && <div className="text-center text-slate-500 text-sm mt-10">Start a conversation with {activePeer.profile.username}.<br/><span className="text-xs opacity-70">Messages are saved locally.</span></div>}
                      <div ref={privateMessagesEndRef} />
@@ -867,8 +888,24 @@ export const SocialHub = React.memo<SocialHubProps>(({
                        </div>
                      )}
                      <div className="flex gap-2 items-end">
-                       <input type="file" accept="image/*" className="hidden" ref={privateFileInputRef} onChange={handlePrivateImageUpload} />
-                       <button type="button" onClick={() => privateFileInputRef.current?.click()} className="p-2.5 text-slate-400 hover:text-brand-500 hover:bg-white dark:hover:bg-white/10 rounded-xl transition-all duration-150 active:scale-90 shrink-0"><ImageIcon size={22} /></button>
+                       <div className="flex flex-col items-center gap-1 shrink-0">
+                          <button 
+                              type="button" 
+                              onClick={toggleImageTimer} 
+                              className="p-1.5 rounded-lg text-[10px] font-bold bg-slate-200 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-white/10 flex items-center gap-0.5 w-10 justify-center transition-colors"
+                              title="Image Timer"
+                          >
+                              {TimerIcon ? (
+                                <TimerIcon size={12} />
+                              ) : (
+                                currentTimerOption.label
+                              )}
+                          </button>
+                          
+                          <input type="file" accept="image/*" className="hidden" ref={privateFileInputRef} onChange={handlePrivateImageUpload} />
+                          <button type="button" onClick={() => privateFileInputRef.current?.click()} className="p-2.5 text-slate-400 hover:text-brand-500 hover:bg-white dark:hover:bg-white/10 rounded-xl transition-all duration-150 active:scale-90 shrink-0"><ImageIcon size={22} /></button>
+                       </div>
+                       
                        {!privateInput.trim() && (isRecordingPrivate ? (<button type="button" onClick={stopPrivateRecording} className="p-2.5 bg-red-500 text-white rounded-xl animate-pulse shrink-0 shadow-lg shadow-red-500/20"><Square size={22} fill="currentColor"/></button>) : (<button type="button" onClick={startPrivateRecording} className="p-2.5 text-slate-400 hover:text-brand-500 hover:bg-white dark:hover:bg-white/10 rounded-xl shrink-0 transition-all duration-150 active:scale-90"><Mic size={22} /></button>))}
                        <div className="flex-1 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl flex items-center focus-within:ring-2 focus-within:ring-brand-500/50 transition-all">
                           <input className="w-full bg-transparent px-4 py-3 text-sm text-slate-900 dark:text-white focus:outline-none" placeholder="Type message..." value={privateInput} onChange={handlePrivateTyping} autoFocus />
@@ -877,6 +914,10 @@ export const SocialHub = React.memo<SocialHubProps>(({
                      </div>
                   </form>
                </div>
+            )}
+
+            {previewImage && (
+               <ImageViewer src={previewImage} onClose={() => setPreviewImage(null)} />
             )}
           </div>
         </div>

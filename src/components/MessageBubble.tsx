@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '../types';
 import { clsx } from 'clsx';
-import { Smile, Pencil, Check, CheckCheck, Reply, Play, Pause } from 'lucide-react';
+import { Smile, Pencil, Check, CheckCheck, Reply, Play, Pause, Timer, EyeOff } from 'lucide-react';
 
 interface MessageBubbleProps {
   message: Message;
@@ -9,6 +9,7 @@ interface MessageBubbleProps {
   onReact?: (emoji: string) => void;
   onEdit?: (messageId: string, text: string) => void;
   onReply?: (message: Message) => void;
+  onImageClick?: (src: string) => void;
 }
 
 const PRESET_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
@@ -123,12 +124,35 @@ export const MessageBubble = React.memo<MessageBubbleProps>(({
   senderName, 
   onReact,
   onEdit,
-  onReply
+  onReply,
+  onImageClick
 }) => {
   const [showPicker, setShowPicker] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const touchStartX = useRef<number | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [isExpired, setIsExpired] = useState(false);
+
+  // Expiration logic
+  useEffect(() => {
+    if (message.expiresAt) {
+      const checkExpiry = () => {
+        const left = message.expiresAt! - Date.now();
+        if (left <= 0) {
+          setIsExpired(true);
+          setTimeRemaining(0);
+        } else {
+          setTimeRemaining(left);
+          setIsExpired(false);
+        }
+      };
+      
+      checkExpiry();
+      const interval = setInterval(checkExpiry, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [message.expiresAt]);
 
   if (message.sender === 'system') {
     return (
@@ -195,6 +219,13 @@ export const MessageBubble = React.memo<MessageBubbleProps>(({
     } catch (e) {
       return '';
     }
+  };
+
+  // Format remaining time for expiring images
+  const formatRemaining = (ms: number) => {
+    if (ms < 10000) return `${Math.ceil(ms / 1000)}s`;
+    if (ms < 60000) return `${Math.ceil(ms / 1000)}s`;
+    return `${Math.ceil(ms / 60000)}m`;
   };
 
   // Entry animation based on sender - optimized for 60fps
@@ -315,12 +346,28 @@ export const MessageBubble = React.memo<MessageBubbleProps>(({
             )}
 
             {message.type === 'image' && message.fileData && (
-              <div className="p-1">
-                <img 
-                  src={message.fileData} 
-                  alt="Attachment" 
-                  className="max-w-full rounded-xl max-h-[300px] object-cover"
-                />
+              <div className="p-1 relative">
+                {isExpired ? (
+                   <div className="w-48 h-48 sm:w-60 sm:h-60 bg-slate-200 dark:bg-slate-800/50 rounded-xl flex flex-col items-center justify-center text-slate-400 gap-2 border border-slate-300 dark:border-white/10">
+                      <EyeOff size={32} />
+                      <span className="text-xs font-bold uppercase tracking-wider">Expired</span>
+                   </div>
+                ) : (
+                  <>
+                    <img 
+                      src={message.fileData} 
+                      alt="Attachment" 
+                      onClick={() => onImageClick?.(message.fileData!)}
+                      className="max-w-full rounded-xl max-h-[300px] object-cover cursor-zoom-in active:scale-[0.98] transition-transform"
+                    />
+                    {message.expiryDuration && timeRemaining !== null && (
+                       <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border border-white/20 shadow-lg">
+                          <Timer size={12} className={timeRemaining < 5000 ? "animate-pulse text-red-400" : ""} />
+                          <span className="tabular-nums">{formatRemaining(timeRemaining)}</span>
+                       </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 

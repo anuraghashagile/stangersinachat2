@@ -328,18 +328,22 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
       
       if (payload.type === 'message') {
         const senderProfile = !isMain ? directPeerProfilesRef.current.get(conn.peer) : undefined;
-        
+        const msgTimestamp = Date.now();
+        const expiresAt = payload.expiryDuration ? msgTimestamp + payload.expiryDuration : undefined;
+
         const newMsg: Message = {
           id: payload.id || Date.now().toString(),
           text: payload.dataType === 'text' ? payload.payload : undefined,
           fileData: payload.dataType !== 'text' ? payload.payload : undefined,
           sender: 'stranger',
-          timestamp: Date.now(),
+          timestamp: msgTimestamp,
           type: payload.dataType || 'text',
           reactions: [],
           replyTo: payload.replyTo,
           senderProfile: senderProfile,
-          senderPeerId: conn.peer
+          senderPeerId: conn.peer,
+          expiryDuration: payload.expiryDuration,
+          expiresAt: expiresAt
         };
         
         if (isMain) {
@@ -523,12 +527,13 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
     }
   };
 
-  const sendImage = (base64: string) => {
+  const sendImage = (base64: string, expiryDuration?: number) => {
     const id = Date.now().toString();
-    const msg: Message = { id, fileData: base64, sender: 'me', timestamp: Date.now(), type: 'image', reactions: [], status: 'sent' };
+    const expiresAt = expiryDuration ? Date.now() + expiryDuration : undefined;
+    const msg: Message = { id, fileData: base64, sender: 'me', timestamp: Date.now(), type: 'image', reactions: [], status: 'sent', expiryDuration, expiresAt };
     setMessages(prev => [...prev, msg]);
     if (mainConnRef.current?.open) {
-      mainConnRef.current.send({ type: 'message', payload: base64, dataType: 'image', id });
+      mainConnRef.current.send({ type: 'message', payload: base64, dataType: 'image', id, expiryDuration });
     }
   };
   
@@ -699,9 +704,9 @@ export const useHumanChat = (userProfile: UserProfile | null, persistentId?: str
      }
   };
   
-  const sendDirectImage = (peerId: string, base64: string, id?: string) => {
+  const sendDirectImage = (peerId: string, base64: string, id?: string, expiryDuration?: number) => {
      const conn = directConnsRef.current.get(peerId);
-     if (conn?.open) conn.send({ type: 'message', payload: base64, dataType: 'image', id });
+     if (conn?.open) conn.send({ type: 'message', payload: base64, dataType: 'image', id, expiryDuration });
   };
   
   const sendDirectAudio = (peerId: string, base64: string, id?: string) => {

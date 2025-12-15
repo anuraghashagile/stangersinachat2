@@ -47,6 +47,8 @@ export interface Message {
   isEdited?: boolean; // Added for edit status
   status?: 'sent' | 'seen'; // Added for read receipts
   replyTo?: ReplyInfo; // Added for Reply functionality
+  expiryDuration?: number; // Duration in ms
+  expiresAt?: number; // Timestamp when it expires
 }
 
 export interface PeerData {
@@ -56,6 +58,7 @@ export interface PeerData {
   messageId?: string; // For targeting specific messages (reactions/edits/seen)
   id?: string; // For syncing message IDs across peers
   replyTo?: ReplyInfo; // Added for syncing replies
+  expiryDuration?: number; // Added for disappearing images
 }
 
 // Presence state for the lobby

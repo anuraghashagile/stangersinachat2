@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, useCallback } from 'react';
-import { Send, Loader2, RefreshCw, EyeOff, Shield, Image as ImageIcon, Mic, X, Square, AlertTriangle, UserPlus, Check, Bell, Sparkles, MessageCircle } from 'lucide-react';
+import { Send, Loader2, RefreshCw, EyeOff, Shield, Image as ImageIcon, Mic, X, Square, AlertTriangle, UserPlus, Check, Bell, Sparkles, MessageCircle, Timer, Infinity } from 'lucide-react';
 import { supabase, saveMessageToHistory, fetchChatHistory } from './lib/supabase';
 import { Message, ChatMode, UserProfile, AppSettings, SessionType, ReplyInfo } from './types';
 import { useHumanChat } from './hooks/useHumanChat';
@@ -9,6 +9,7 @@ import { Button } from './components/Button';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import Loader from './components/Loader';
+import { ImageViewer } from './components/ImageViewer';
 import { clsx } from 'clsx';
 
 // Lazy Load Heavy Components to reduce initial bundle size
@@ -37,6 +38,13 @@ const getInitialTheme = (): 'light' | 'dark' => {
   return 'dark';
 };
 
+const TIMER_OPTIONS = [
+  { label: '∞', value: 0, icon: Infinity },
+  { label: '5s', value: 5000 },
+  { label: '30s', value: 30000 },
+  { label: '1m', value: 60000 },
+];
+
 export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -52,6 +60,8 @@ export default function App() {
   const [hasChatted, setHasChatted] = useState(false);
   const [showSafetyWarning, setShowSafetyWarning] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
+  const [imageTimerIndex, setImageTimerIndex] = useState(0);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   
   const [isRecording, setIsRecording] = useState(false);
   
@@ -115,6 +125,7 @@ export default function App() {
 
   useEffect(() => {
     const interval = setInterval(() => {
+      // Logic for vanish mode text messages
       if (messages.some(m => m.isVanish)) {
         const now = Date.now();
         setMessages(prev => prev.filter(msg => {
@@ -122,6 +133,9 @@ export default function App() {
           return (now - msg.timestamp) < 10000;
         }));
       }
+      
+      // We don't remove expired images from state immediately to allow "expired" placeholder,
+      // but we could clean them up if they get too old.
     }, 1000);
     return () => clearInterval(interval);
   }, [messages, setMessages]);
@@ -274,11 +288,16 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        sendImage(reader.result as string);
+        const expiry = TIMER_OPTIONS[imageTimerIndex].value;
+        sendImage(reader.result as string, expiry > 0 ? expiry : undefined);
       };
       reader.readAsDataURL(file);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const toggleImageTimer = () => {
+    setImageTimerIndex((prev) => (prev + 1) % TIMER_OPTIONS.length);
   };
 
   const startRecording = async () => {
@@ -349,6 +368,9 @@ export default function App() {
       );
     }
 
+    const currentTimerOption = TIMER_OPTIONS[imageTimerIndex];
+    const TimerIcon = currentTimerOption.icon;
+
     return (
       <div className="flex-1 flex flex-col h-full relative overflow-hidden">
          {/* SEARCHING OVERLAY */}
@@ -390,6 +412,7 @@ export default function App() {
                     onReact={(emoji) => sendReaction(msg.id, emoji)}
                     onEdit={initiateEdit}
                     onReply={handleReply}
+                    onImageClick={setPreviewImage}
                 />
               </div>
           ))}
@@ -468,8 +491,27 @@ export default function App() {
 
             <form onSubmit={handleSendMessage} className="flex gap-2 items-end relative">
               <div id="social-hub-trigger-anchor" className="absolute bottom-[calc(100%+8px)] right-0 z-30 w-12 h-12 pointer-events-none"></div>
-              <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} disabled={!isConnected}/>
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all duration-150 active:scale-90 disabled:opacity-50 shrink-0"><ImageIcon size={24} /></button>
+              
+              {/* Image Input & Timer */}
+              <div className="flex flex-col items-center gap-1 shrink-0">
+                 <button 
+                    type="button" 
+                    onClick={toggleImageTimer} 
+                    className="p-1.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 flex items-center gap-0.5 w-10 justify-center transition-colors"
+                    title="Image Timer"
+                    disabled={!isConnected}
+                 >
+                    {TimerIcon ? (
+                       <TimerIcon size={12} />
+                    ) : (
+                       currentTimerOption.label
+                    )}
+                 </button>
+                 
+                 <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} disabled={!isConnected}/>
+                 <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all duration-150 active:scale-90 disabled:opacity-50"><ImageIcon size={24} /></button>
+              </div>
+
               {!inputText.trim() && (
                   isRecording ? (
                     <button type="button" onClick={stopRecording} className="p-3 bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all animate-pulse shrink-0"><Square size={24} fill="currentColor" /></button>
@@ -576,6 +618,10 @@ export default function App() {
                <EyeOff size={12} /> Vanish Mode Active
             </div>
          </div>
+      )}
+      
+      {previewImage && (
+         <ImageViewer src={previewImage} onClose={() => setPreviewImage(null)} />
       )}
 
       <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Loader /></div>}>
